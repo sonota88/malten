@@ -1,0 +1,175 @@
+;; -*- mode: clojure -*-
+
+(def! l.foldl
+  (fn* [f acc xs]
+       (if (empty? xs) acc
+         (l.foldl f
+                (f (first xs) acc)
+                (rest xs)))))
+
+(def! l#reverse
+  (fn* [self]
+       (l.foldl cons
+                '()
+                self)))
+
+;; (def! l.foldr
+;;   (fn* [f acc xs]
+;;        (if (empty? xs) acc
+;;          (f (l.foldr f acc (rest xs))
+;;             (first xs)))))
+
+(def! l.foldr
+  (fn* [f acc xs]
+       (l.foldl
+        f
+        acc
+        (l#reverse xs))))
+
+;; --------------------------------
+
+(def! or
+  (fn* [e1 e2]
+       (if e1
+           true
+           (if e2
+               true
+             false))))
+
+;; --------------------------------
+
+(def! l#take
+  (fn* [self n]
+       (let* [iter (fn* [self n acc]
+                        (if (= n 0)
+                            acc
+                          (iter (rest self)
+                                (- n 1)
+                                (cons (first self)
+                                      acc))))
+                   ]
+         (l#reverse (iter self n '())))))
+
+(def! l#drop
+  (fn* [self n]
+       (if (= n 0)
+           self
+         (l#drop (rest self) (- n 1)))))
+
+;; --------------------------------
+
+(def! s#to-chars
+  (fn* [self]
+       (let* [
+              iter (fn* [self acc]
+                        (if (or (= self "")
+                                (nil? self))
+                            acc
+                          (iter (s#rest self)
+                                (cons (s#first self) acc))))
+                   ]
+         (l#reverse (iter self '())))))
+
+(def! s.from-chars
+  (fn* [chars]
+       (l.foldr s.cons nil chars)))
+
+
+(def! s.proc-as-list
+  (fn* [str fn]
+       (s.from-chars
+        (fn (s#to-chars str)))))
+
+(def! s#drop
+  (fn* [self n]
+       (s.proc-as-list
+        self
+        (fn* [cs] (l#drop cs n)))))
+
+(def! l#sublist
+  (fn* [self from to]
+       (l#drop (l#take self to) from)))
+
+(def! s#substring
+  (fn* [self from to]
+       (s.proc-as-list self
+                       (fn* [cs] (l#sublist cs from to)))))
+
+(def! l#size
+  (fn* [self]
+       (l.foldl (fn* [x acc] (+ acc 1))
+                0
+                self)))
+
+(def! s#size
+  (fn* [self]
+       (l#size (s#to-chars self))))
+
+(def! s#start-with?
+  (fn* [self target]
+       (= (s#substring self 0 (s#size target))
+          target)))
+
+;; --------------------------------
+
+;; <% ... %> の中身の長さを求める
+(def! mal-code-length
+  (fn* [rest]
+       (let* [iter (fn* [rest2 pos]
+                       (if (s#start-with? rest2 "%>")
+                           pos
+                         (iter (s#rest rest2) (+ pos 1)))
+                       )
+                   ]
+         (iter rest 0))))
+
+;; <% ... %> の部分の処理
+(def! gen-renderer-code
+  (fn* [rest buf acc]
+       (let* [len (mal-code-length rest)]
+         (gen-renderer-text
+          (s#drop rest (+ len 2))
+          "" ; clear buf
+          (cons
+           (if (s#start-with? rest "=")
+               (list 'code-print (s#substring rest 1 len))
+             (list 'code (s#substring rest 0 len)))
+           (cons (list 'text buf)
+                 acc))))))
+
+(def! gen-renderer-text
+  (fn* [rest buf acc]
+       (if (nil? rest)
+           (cons (list 'text buf) acc) ; end of iteration
+         (if (s#start-with? rest "<%")
+             (gen-renderer-code
+              (s#drop rest 2) ; "<%" を除去
+              buf
+              acc)
+           (gen-renderer-text (s#drop rest 1)
+                              (str buf (s#first rest))
+                              acc)))))
+
+(def! to-code
+  (fn* [part]
+       (let* [
+              type    (nth part 0)
+              content (nth part 1)
+              ]
+         (cond
+          (= type 'code)       content
+          (= type 'code-print) (str "(print " content ")\n")
+          (= type 'text)       (str "(print " (pr-str content) ")\n")))))
+
+(def! gen-renderer
+  (fn* [template]
+       (let* [reversed-parts (gen-renderer-text
+                              template
+                              ""  ; buf
+                              '() ; acc
+                              )
+                             ]
+         (l.foldr (fn* [part acc]
+                       (str acc (to-code part)))
+                  ""
+                  reversed-parts))))

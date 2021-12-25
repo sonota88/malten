@@ -1,0 +1,22 @@
+<h1>品目一覧</h1>
+
+<p>購入日: <%= date %></p>
+
+<table>
+  <tr>
+    <th>ID</th>
+    <th>品名</th>
+    <th>価格</th>
+  </tr>
+  <% (map (fn* [item] (do %>
+  <tr>
+    <td><%= (get item "id") %></td>
+    <td><%= (get item "name") %></td>
+    <td><%= (- (get item "price")
+               (if (get item "discount")
+                 (get item "discount")
+                 0))
+        %> 円</td>
+  </tr>
+  <% )) items) %>
+</table>
